@@ -238,7 +238,13 @@
 
             // ---------- فیلتر کیش ----------
             var legalMoves = new List<int>();
+            CeckKish(square, piece, moves, legalMoves);
 
+            return legalMoves;
+        }
+
+        private void CeckKish(int square, Piece piece, List<int> moves, List<int> legalMoves)
+        {
             foreach (var move in moves)
             {
                 // شبیه‌سازی حرکت
@@ -275,8 +281,6 @@
                 board[square] = piece;
                 board[move] = captured;
             }
-
-            return legalMoves;
         }
 
         private void CheckEnPassant(int square, Piece piece, List<int> moves)
@@ -361,14 +365,7 @@
 
 
 
-        //private static List<int> ExtractSquares(ulong mask)
-        //{
-        //    List<int> result = new();
-        //    for (int i = 0; i < 64; i++)
-        //        if ((mask & (1UL << i)) != 0)
-        //            result.Add(i);
-        //    return result;
-        //}
+        
     }
 
 
