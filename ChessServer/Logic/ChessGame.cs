@@ -2,10 +2,14 @@
 {
     public class ChessGame
     {
-        
+        private (int from, int to, Piece moved)? lastMove;
+
 
         // وضعیت صفحه (هر خانه یا خالی است یا یک مهره دارد)
         private readonly Piece?[] board = new Piece?[64];
+
+        private int? enPassantSquare = null;
+
 
         // نوبت فعلی
         public PieceColor Turn { get; private set; } = PieceColor.White;
@@ -57,13 +61,43 @@
             var piece = board[from];
             if (piece == null) return;
 
-            // انجام حرکت
+            var capturedBeforeMove = board[to];
+
+            // --- بررسی گرفتن آن‌پاسان ---
+            if (piece.Type == PieceType.Pawn && enPassantSquare.HasValue && to == enPassantSquare.Value)
+            {
+                int capturedPawnSquare = (piece.Color == PieceColor.White) ? to - 8 : to + 8;
+                board[capturedPawnSquare] = null;
+            }
+
+            // --- جابجایی اصلی ---
             board[to] = piece;
             board[from] = null;
 
-            // تغییر نوبت
+            // --- تنظیم enPassantSquare برای حرکت بعدی ---
+            if (piece.Type == PieceType.Pawn && Math.Abs(to - from) == 16)
+                enPassantSquare = (from + to) / 2;
+            else
+                enPassantSquare = null;
+
+            // --- پروموشن ---
+            int toRank = to / 8;
+            if (piece.Type == PieceType.Pawn &&
+                ((piece.Color == PieceColor.White && toRank == 7) ||
+                 (piece.Color == PieceColor.Black && toRank == 0)))
+            {
+                board[to] = new Piece(PieceType.Queen, piece.Color);
+            }
+
+            // ---  ثبت آخرین حرکت ---
+            lastMove = (from, to, piece);
+
+            // --- تغییر نوبت ---
             Turn = (Turn == PieceColor.White) ? PieceColor.Black : PieceColor.White;
         }
+
+
+
 
         private List<int> GetSimpleMoves(int from, ulong moveMask, PieceColor color)
         {
@@ -178,7 +212,11 @@
             {
                 case PieceType.Pawn:
                     moves.AddRange(GetPawnMoves(square, piece.Color));
+
+                    // --- بررسی حرکت آن‌پاسان ---
+                    CheckEnPassant(square, piece, moves);
                     break;
+
                 case PieceType.Knight:
                     moves.AddRange(GetSimpleMoves(square, KnightLookup.Moves[square], piece.Color));
                     break;
@@ -208,12 +246,32 @@
                 board[move] = piece;
                 board[square] = null;
 
+                // نکته: اگر این حرکت، یک en-passant گرفتن باشد، باید پیادهٔ گرفته‌شده را هم موقتا پاک کنیم
+                bool removedEnPassantPawn = false;
+                Piece? removedPawn = null;
+                if (piece.Type == PieceType.Pawn && enPassantSquare.HasValue && move == enPassantSquare.Value)
+                {
+                    int capturedPawnSquare = (piece.Color == PieceColor.White) ? move - 8 : move + 8;
+                    removedPawn = board[capturedPawnSquare];
+                    if (removedPawn != null && removedPawn.Type == PieceType.Pawn && removedPawn.Color != piece.Color)
+                    {
+                        board[capturedPawnSquare] = null;
+                        removedEnPassantPawn = true;
+                    }
+                }
+
                 if (!IsKingInCheck(piece.Color))
                 {
                     legalMoves.Add(move);
                 }
 
-                // بازگرداندن صفحه
+                // بازگرداندن صفحه (undo شبیه‌سازی)
+                if (removedEnPassantPawn)
+                {
+                    int capturedPawnSquare = (piece.Color == PieceColor.White) ? move - 8 : move + 8;
+                    board[capturedPawnSquare] = removedPawn;
+                }
+
                 board[square] = piece;
                 board[move] = captured;
             }
@@ -221,7 +279,28 @@
             return legalMoves;
         }
 
+        private void CheckEnPassant(int square, Piece piece, List<int> moves)
+        {
+            if (enPassantSquare.HasValue)
+            {
+                int row = square / 8;
+                int col = square % 8;
+                int ep = enPassantSquare.Value;
+                int epRow = ep / 8;
+                int epCol = ep % 8;
 
+                // en-passant زمانی می‌تواند باشد که پیاده دشمن دقیقا در هم‌ردیف ما و در ستون مجاور باشد
+                if (row == epRow && Math.Abs(col - epCol) == 1)
+                {
+                    int captureSquare = (piece.Color == PieceColor.White) ? ep - 8 : ep + 8;
+                    // خانه‌ای که مهاجم باید برود، باید خالی باشد (طبق قانون)، و خانهٔ گرفته شده باید پیادهٔ دشمن باشد
+                    if (board[captureSquare] == null && board[ep] != null && board[ep]?.Type == PieceType.Pawn && board[ep]?.Color != piece.Color)
+                    {
+                        moves.Add(ep);
+                    }
+                }
+            }
+        }
 
         private bool IsKingInCheck(PieceColor color)
         {
