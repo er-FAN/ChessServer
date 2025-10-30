@@ -3,6 +3,7 @@
     public class ChessGame
     {
         private (int from, int to, Piece moved)? lastMove;
+        private List<(int from, int to, Piece moved)?> Moves;
 
 
         // وضعیت صفحه (هر خانه یا خالی است یا یک مهره دارد)
@@ -25,19 +26,14 @@
         private void SetupInitialPosition()
         {
             // مهره‌های سفید
-            board[BitBoardHelper.ToIndex(0, 0)] = new Piece(PieceType.Rook, PieceColor.White);
-            board[BitBoardHelper.ToIndex(0, 1)] = new Piece(PieceType.Knight, PieceColor.White);
-            board[BitBoardHelper.ToIndex(0, 2)] = new Piece(PieceType.Bishop, PieceColor.White);
-            board[BitBoardHelper.ToIndex(0, 3)] = new Piece(PieceType.Queen, PieceColor.White);
-            board[BitBoardHelper.ToIndex(0, 4)] = new Piece(PieceType.King, PieceColor.White);
-            board[BitBoardHelper.ToIndex(0, 5)] = new Piece(PieceType.Bishop, PieceColor.White);
-            board[BitBoardHelper.ToIndex(0, 6)] = new Piece(PieceType.Knight, PieceColor.White);
-            board[BitBoardHelper.ToIndex(0, 7)] = new Piece(PieceType.Rook, PieceColor.White);
-
-            for (int file = 0; file < 8; file++)
-                board[BitBoardHelper.ToIndex(1, file)] = new Piece(PieceType.Pawn, PieceColor.White);
+            InitialWhitePiecesPosition();
 
             // مهره‌های سیاه
+            InitialBlackPiecesPosition();
+        }
+
+        private void InitialBlackPiecesPosition()
+        {
             board[BitBoardHelper.ToIndex(7, 0)] = new Piece(PieceType.Rook, PieceColor.Black);
             board[BitBoardHelper.ToIndex(7, 1)] = new Piece(PieceType.Knight, PieceColor.Black);
             board[BitBoardHelper.ToIndex(7, 2)] = new Piece(PieceType.Bishop, PieceColor.Black);
@@ -51,6 +47,21 @@
                 board[BitBoardHelper.ToIndex(6, file)] = new Piece(PieceType.Pawn, PieceColor.Black);
         }
 
+        private void InitialWhitePiecesPosition()
+        {
+            board[BitBoardHelper.ToIndex(0, 0)] = new Piece(PieceType.Rook, PieceColor.White);
+            board[BitBoardHelper.ToIndex(0, 1)] = new Piece(PieceType.Knight, PieceColor.White);
+            board[BitBoardHelper.ToIndex(0, 2)] = new Piece(PieceType.Bishop, PieceColor.White);
+            board[BitBoardHelper.ToIndex(0, 3)] = new Piece(PieceType.Queen, PieceColor.White);
+            board[BitBoardHelper.ToIndex(0, 4)] = new Piece(PieceType.King, PieceColor.White);
+            board[BitBoardHelper.ToIndex(0, 5)] = new Piece(PieceType.Bishop, PieceColor.White);
+            board[BitBoardHelper.ToIndex(0, 6)] = new Piece(PieceType.Knight, PieceColor.White);
+            board[BitBoardHelper.ToIndex(0, 7)] = new Piece(PieceType.Rook, PieceColor.White);
+
+            for (int file = 0; file < 8; file++)
+                board[BitBoardHelper.ToIndex(1, file)] = new Piece(PieceType.Pawn, PieceColor.White);
+        }
+
         public Piece? GetPieceAt(int square) => board[square];
 
         /// <summary>
@@ -58,29 +69,54 @@
         /// </summary>
         public void MovePiece(int from, int to)
         {
-            var piece = board[from];
-            if (piece == null) return;
-
-            var capturedBeforeMove = board[to];
-
-            // --- بررسی گرفتن آن‌پاسان ---
-            if (piece.Type == PieceType.Pawn && enPassantSquare.HasValue && to == enPassantSquare.Value)
+            Piece? piece = GetPieceAt(from);
+            if (piece != null)
             {
-                int capturedPawnSquare = (piece.Color == PieceColor.White) ? to - 8 : to + 8;
-                board[capturedPawnSquare] = null;
+                ExecuteMove(from, to, piece);
+
+                AfterMoveChecks(from, to, piece);
+
+                UpdateHistory(from, to, piece);
+
+                ChangeTurn();
             }
+        }
 
-            // --- جابجایی اصلی ---
-            board[to] = piece;
-            board[from] = null;
+        private void UpdateHistory(int from, int to, Piece piece)
+        {
+            SaveLastMove(from, to, piece);
 
-            // --- تنظیم enPassantSquare برای حرکت بعدی ---
+            AddLastMoveToHistory();
+        }
+
+        private void AfterMoveChecks(int from, int to, Piece piece)
+        {
+            SetEnPassantSquareForNextMoveIfExist(from, to, piece);
+
+            CheckPromotion(to, piece);
+        }
+
+        private void ExecuteEnPassant(int to, Piece piece)
+        {
+            int capturedPawnSquare = (piece.Color == PieceColor.White) ? to - 8 : to + 8;
+            board[capturedPawnSquare] = null;
+        }
+
+        private bool MoveIsEnPassant(int to, Piece piece)
+        {
+            return piece.Type == PieceType.Pawn && enPassantSquare.HasValue && to == enPassantSquare.Value;
+        }
+
+        private void SetEnPassantSquareForNextMoveIfExist(int from, int to, Piece piece)
+        {
             if (piece.Type == PieceType.Pawn && Math.Abs(to - from) == 16)
                 enPassantSquare = (from + to) / 2;
             else
                 enPassantSquare = null;
+        }
 
-            // --- پروموشن ---
+        private void CheckPromotion(int to, Piece piece)
+        {
             int toRank = to / 8;
             if (piece.Type == PieceType.Pawn &&
                 ((piece.Color == PieceColor.White && toRank == 7) ||
@@ -88,16 +124,36 @@
             {
                 board[to] = new Piece(PieceType.Queen, piece.Color);
             }
+        }
 
-            // ---  ثبت آخرین حرکت ---
+        private void SaveLastMove(int from, int to, Piece piece)
+        {
             lastMove = (from, to, piece);
+        }
 
-            // --- تغییر نوبت ---
+        private void ChangeTurn()
+        {
             Turn = (Turn == PieceColor.White) ? PieceColor.Black : PieceColor.White;
         }
 
+        private void ExecuteMove(int from, int to, Piece piece)
+        {
+            board[to] = piece;
+            board[from] = null;
 
+            if (MoveIsEnPassant(to, piece))
+            {
+                ExecuteEnPassant(to, piece);
+            }
+        }
 
+        private void AddLastMoveToHistory()
+        {
+            if (lastMove != null)
+            {
+                Moves.Add(lastMove);
+            }
+        }
 
         private List<int> GetSimpleMoves(int from, ulong moveMask, PieceColor color)
         {
@@ -203,7 +259,7 @@
         /// </summary>
         public List<int> GetAvailableMoves(int square)
         {
-            var piece = board[square];
+            var piece = GetPieceAt(square);
             if (piece == null) return new();
 
             var moves = new List<int>();
@@ -212,8 +268,6 @@
             {
                 case PieceType.Pawn:
                     moves.AddRange(GetPawnMoves(square, piece.Color));
-
-                    // --- بررسی حرکت آن‌پاسان ---
                     CheckEnPassant(square, piece, moves);
                     break;
 
