@@ -55,11 +55,43 @@ namespace ChessServer.Controllers
                 return BadRequest("حرکت غیرمجاز است.");
 
             _game.MovePiece(from, to);
+            string message = $"حرکت {piece.Color} {piece.Type} از {request.FromSquare} به {request.ToSquare} انجام شد.";
+            string promotionMessage = "enter 1 for queen,2 for rook,3 for bishop,4 for knight";
+            if (_game.pendingPromotionSquare != null)
+            {
+                message += "\n" + promotionMessage;
+            }
 
             return Ok(new
             {
-                Message = $"حرکت {piece.Color} {piece.Type} از {request.FromSquare} به {request.ToSquare} انجام شد.",
+                Message = message,
                 NextTurn = _game.Turn.ToString()
+            });
+        }
+
+        [HttpPost("promotion")]
+        public IActionResult PromotePawn(PromotionRequest request)
+        {
+            if (_game.pendingPromotionSquare == null)
+                return BadRequest("No pawn is awaiting promotion.");
+
+            // تبدیل عدد کاربر به enum PieceType
+            PieceType newType = request.PieceType switch
+            {
+                1 => PieceType.Queen,
+                2 => PieceType.Rook,
+                3 => PieceType.Bishop,
+                4 => PieceType.Knight,
+                _ => throw new ArgumentException("Invalid piece type")
+            };
+
+            // انجام پروموشن
+            _game.PromotePawn(_game.pendingPromotionSquare.Value, newType);
+
+            return Ok(new
+            {
+                success = true,
+                promotedTo = newType.ToString()
             });
         }
 
@@ -95,4 +127,10 @@ namespace ChessServer.Controllers
         public string FromSquare { get; set; } = string.Empty; // مثل "e2"
         public string ToSquare { get; set; } = string.Empty;   // مثل "e4"
     }
+
+    public class PromotionRequest
+    {
+        public int PieceType { get; set; }  // 1=Queen, 2=Rook, 3=Bishop, 4=Knight
+    }
+
 }

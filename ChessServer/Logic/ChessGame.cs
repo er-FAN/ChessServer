@@ -5,6 +5,7 @@
         private (int from, int to, Piece moved)? lastMove;
         private List<(int from, int to, Piece moved)?> Moves;
 
+        public int? pendingPromotionSquare;
 
         // وضعیت صفحه (هر خانه یا خالی است یا یک مهره دارد)
         private readonly Piece?[] board = new Piece?[64];
@@ -122,7 +123,8 @@
                 ((piece.Color == PieceColor.White && toRank == 7) ||
                  (piece.Color == PieceColor.Black && toRank == 0)))
             {
-                board[to] = new Piece(PieceType.Queen, piece.Color);
+                //board[to] = new Piece(PieceType.Queen, piece.Color);
+                pendingPromotionSquare = to;
             }
         }
 
@@ -416,10 +418,14 @@
             return false;
         }
 
-
-
-
-        
+        internal void PromotePawn(int promotionSquare, PieceType newType)
+        {
+            if (board[promotionSquare] != null)
+            {
+                board[promotionSquare] = new Piece(newType, board[promotionSquare].Color);
+            }
+            
+        }
     }
 
 
