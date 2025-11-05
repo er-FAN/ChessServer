@@ -18,7 +18,6 @@ namespace ChessServer.Logic
         private PieceColor? castleMoveColor;
 
         private bool isCastlingInProgress = false;
-        private bool isCastlingCompleted = false;
 
         private bool canKingsideCastle = false;
         private bool canQueensideCastle = false;
@@ -28,7 +27,7 @@ namespace ChessServer.Logic
         private bool isQueensideCastle = false;
         public int SelectedDestinationForRookWhenIsCastlingInProgress { get; private set; }
 
-
+        public GameState GameState { get; private set; }
 
         // نوبت فعلی
         public PieceColor Turn { get; private set; } = PieceColor.White;
@@ -113,14 +112,12 @@ namespace ChessServer.Logic
                 if (to == 6 || to == 62) // g1 یا g8
                 {
                     isKingsideCastle = true;
-                    isQueensideCastle = false;
                 }
                 else if (to == 2 || to == 58) // c1 یا c8
                 {
                     isQueensideCastle = true;
-                    isKingsideCastle = false;
                 }
-                isCastlingInProgress = true;
+                isCastlingInProgress = isKingsideCastle || isQueensideCastle;
             }
 
         }
@@ -293,13 +290,25 @@ namespace ChessServer.Logic
 
         private void AfterMoveChecks(int from, int to, Piece piece)
         {
-            ResetCastlingFlagsWhenCompleted();
-
             SetEnPassantSquareForNextMoveIfExist(from, to, piece);
 
             CheckPromotion(to, piece);
 
             CheckMoveIsCastleMove(to, piece);
+
+            UpdateGameState();
+        }
+
+        private void UpdateGameState()
+        {
+            if (IsCheckmate(Turn))
+            {
+                GameState = GameState.Checkmate;
+            }
+            else if (IsStalemate(Turn))
+            {
+                GameState = GameState.Stalemate;
+            }
         }
 
         private void ResetCastlingFlagsWhenCompleted()
@@ -317,7 +326,6 @@ namespace ChessServer.Logic
                 isQueensideCastle = false;
                 SelectedDestinationForRookWhenIsCastlingInProgress = 65;
             }
-            isCastlingCompleted = true;
         }
 
         private void ExecuteEnPassant(int to, Piece piece)
@@ -356,9 +364,12 @@ namespace ChessServer.Logic
             lastMove = (from, to, piece);
         }
 
+
         private void ChangeTurn()
         {
             Turn = (Turn == PieceColor.White) ? PieceColor.Black : PieceColor.White;
+
+            
         }
 
         private void ExecuteMove(int from, int to, Piece piece)
@@ -366,9 +377,24 @@ namespace ChessServer.Logic
             board[to] = piece;
             board[from] = null;
 
+            piece.HasMoved = true;
+
+            if (isCastlingInProgress)
+            {
+                CheckCastlingDone(to, piece);
+            }
+
             if (MoveIsEnPassant(to, piece))
             {
                 ExecuteEnPassant(to, piece);
+            }
+        }
+
+        private void CheckCastlingDone(int to, Piece piece)
+        {
+            if (piece.Type == PieceType.Rook && piece.Color == castleMoveColor && to == SelectedDestinationForRookWhenIsCastlingInProgress)
+            {
+                ResetCastlingFlagsWhenCompleted();
             }
         }
 
@@ -530,6 +556,56 @@ namespace ChessServer.Logic
             return moves;
         }
 
+        private bool IsCheckmate(PieceColor color)
+        {
+            // ۱. اگر شاه در کیش نیست، قطعاً مات نیست
+            if (!IsKingInCheck(color))
+                return false;
+
+            // ۲. حالا باید بررسی کنیم که آیا هیچ حرکت قانونی برای خروج از کیش وجود دارد یا نه
+            for (int square = 0; square < 64; square++)
+            {
+                var piece = board[square];
+                if (piece == null || piece.Color != color)
+                    continue;
+
+                // همه‌ی حرکت‌های مجاز این مهره را بگیر
+                var moves = GetAvailableMoves(square);
+
+                // اگر حتی یک حرکت مجاز وجود داشته باشد که شاه را از کیش خارج کند
+                if (moves.Count > 0)
+                    return false;
+            }
+
+            // ۳. اگر هیچ حرکتی شاه را نجات نمی‌دهد → مات است
+            return true;
+        }
+
+
+        private bool IsStalemate(PieceColor color)
+        {
+            // اگر شاه در کیش است، پات نیست
+            if (IsKingInCheck(color))
+                return false;
+
+            // اگر هر مهره‌ای حرکت قانونی دارد، پات نیست
+            for (int square = 0; square < 64; square++)
+            {
+                var piece = GetPieceAt(square);
+                if (piece == null || piece.Color != color)
+                    continue;
+
+                var moves = GetAvailableMoves(square);
+                if (moves.Count > 0)
+                    return false;
+            }
+
+            // هیچ حرکت قانونی و هیچ کیشی وجود ندارد → پات است
+            return true;
+        }
+
+
+
         private bool IsCastlingInProgressAndCorrectRookPieceSelected(int square, Piece piece)
         {
             bool resualt = false;
@@ -569,7 +645,6 @@ namespace ChessServer.Logic
 
             return result;
         }
-
 
         private List<int> GetCastleMoveIfCan(Piece king)
         {
@@ -735,7 +810,6 @@ namespace ChessServer.Logic
 
         }
     }
-
 
 
 }
