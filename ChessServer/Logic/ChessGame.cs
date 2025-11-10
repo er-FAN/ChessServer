@@ -1,35 +1,22 @@
-﻿using System.Collections;
+﻿using ChessServer.Helpers;
+using System.Collections;
 
 namespace ChessServer.Logic
 {
     public class ChessGame
     {
+        public EnPassantHelper enPassantHelper;
+        public PromotionHelper promotionHelper;
+        public CastlingHelper castlingHelper;
+
         private (int from, int to, Piece moved)? lastMove;
         private List<(int from, int to, Piece moved)?> Moves;
 
-        public int? pendingPromotionSquare;
-
         // وضعیت صفحه (هر خانه یا خالی است یا یک مهره دارد)
-        private readonly Piece?[] board = new Piece?[64];
-
-        private int? enPassantSquare = null;
-
-
-        private PieceColor? castleMoveColor;
-
-        private bool isCastlingInProgress = false;
-
-        private bool canKingsideCastle = false;
-        private bool canQueensideCastle = false;
-
-        // برای اینکه بدانیم کدام قلعه در حال انجام است (کوچک یا بزرگ)
-        private bool isKingsideCastle = false;
-        private bool isQueensideCastle = false;
-        public int SelectedDestinationForRookWhenIsCastlingInProgress { get; private set; }
+        public readonly Piece?[] board = new Piece?[64];
 
         public GameState GameState { get; private set; }
 
-        // نوبت فعلی
         public PieceColor Turn { get; private set; } = PieceColor.White;
 
         public ChessGame()
@@ -37,9 +24,6 @@ namespace ChessServer.Logic
             SetupInitialPosition();
         }
 
-        /// <summary>
-        /// تنظیم وضعیت اولیه صفحه
-        /// </summary>
         private void SetupInitialPosition()
         {
             // مهره‌های سفید
@@ -81,9 +65,6 @@ namespace ChessServer.Logic
 
         public Piece? GetPieceAt(int square) => board[square];
 
-        /// <summary>
-        /// جابجایی مهره از خانه‌ای به خانه دیگر
-        /// </summary>
         public void MovePiece(int from, int to)
         {
             Piece? piece = GetPieceAt(from);
@@ -96,190 +77,13 @@ namespace ChessServer.Logic
 
                 UpdateHistory(from, to, piece);
 
-                if (!isCastlingInProgress)
+                if (!castlingHelper.isCastlingInProgress)
                 {
                     ChangeTurn();
                 }
 
             }
         }
-
-        private void CheckMoveIsCastleMove(int to, Piece piece)
-        {
-            if (piece.Color == castleMoveColor && (canQueensideCastle || canKingsideCastle) && piece.Type == PieceType.King)
-            {
-                ResetInprogressCastlingFlags();
-                if (to == 6 || to == 62) // g1 یا g8
-                {
-                    isKingsideCastle = true;
-                }
-                else if (to == 2 || to == 58) // c1 یا c8
-                {
-                    isQueensideCastle = true;
-                }
-                isCastlingInProgress = isKingsideCastle || isQueensideCastle;
-            }
-
-        }
-
-        private void ResetInprogressCastlingFlags()
-        {
-            isKingsideCastle = false;
-            isQueensideCastle = false;
-            isCastlingInProgress = false;
-        }
-
-        private bool CanCastleKingside(PieceColor color)
-        {
-            int rank = (color == PieceColor.White) ? 0 : 7;
-            int kingSquare = BitBoardHelper.ToIndex(rank, 4);
-            int rookSquare = BitBoardHelper.ToIndex(rank, 7);
-
-            var king = board[kingSquare];
-            var rook = board[rookSquare];
-            if (king == null || rook == null) return false;
-            if (king.HasMoved || rook.HasMoved) return false;
-
-            // بین‌شان نباید مهره‌ای باشد
-            if (board[BitBoardHelper.ToIndex(rank, 5)] != null) return false;
-            if (board[BitBoardHelper.ToIndex(rank, 6)] != null) return false;
-
-            // شاه نباید در مسیر یا خانه مقصد کیش باشد
-            if (IsSquareAttacked(kingSquare, color) ||
-                IsSquareAttacked(BitBoardHelper.ToIndex(rank, 5), color) ||
-                IsSquareAttacked(BitBoardHelper.ToIndex(rank, 6), color))
-                return false;
-
-            return true;
-        }
-
-        private bool CanCastleQueenside(PieceColor color)
-        {
-            int rank = (color == PieceColor.White) ? 0 : 7;
-            int kingSquare = BitBoardHelper.ToIndex(rank, 4);
-            int rookSquare = BitBoardHelper.ToIndex(rank, 0);
-
-            var king = board[kingSquare];
-            var rook = board[rookSquare];
-            if (king == null || rook == null) return false;
-            if (king.HasMoved || rook.HasMoved) return false;
-
-            // بین‌شان نباید مهره‌ای باشد
-            if (board[BitBoardHelper.ToIndex(rank, 1)] != null) return false;
-            if (board[BitBoardHelper.ToIndex(rank, 2)] != null) return false;
-            if (board[BitBoardHelper.ToIndex(rank, 3)] != null) return false;
-
-            // شاه نباید در مسیر یا خانه مقصد کیش باشد
-            if (IsSquareAttacked(kingSquare, color) ||
-                IsSquareAttacked(BitBoardHelper.ToIndex(rank, 3), color) ||
-                IsSquareAttacked(BitBoardHelper.ToIndex(rank, 2), color))
-                return false;
-
-            return true;
-        }
-
-        private bool IsSquareAttacked(int targetSquare, PieceColor defenderColor)
-        {
-            var attackerColor = (defenderColor == PieceColor.White) ? PieceColor.Black : PieceColor.White;
-
-            int targetRank = targetSquare / 8;
-            int targetFile = targetSquare % 8;
-
-            // 🔹 بررسی جهت‌های حمله — مثل رخ، فیل، وزیر
-            (int dr, int df)[] directions =
-            {
-        (1,0), (-1,0), (0,1), (0,-1), // رخ
-        (1,1), (1,-1), (-1,1), (-1,-1) // فیل
-    };
-
-            // بررسی همه‌ی خانه‌ها برای مهره‌های حریف
-            for (int i = 0; i < 64; i++)
-            {
-                var piece = board[i];
-                if (piece == null || piece.Color != attackerColor)
-                    continue;
-
-                int rank = i / 8;
-                int file = i % 8;
-
-                switch (piece.Type)
-                {
-                    // ♜ رخ — حرکت‌های عمودی و افقی
-                    case PieceType.Rook:
-                        foreach (var (dr, df) in directions.Take(4))
-                            if (CanSlideAttack(rank, file, dr, df, targetRank, targetFile))
-                                return true;
-                        break;
-
-                    // ♝ فیل — حرکت‌های مورب
-                    case PieceType.Bishop:
-                        foreach (var (dr, df) in directions.Skip(4))
-                            if (CanSlideAttack(rank, file, dr, df, targetRank, targetFile))
-                                return true;
-                        break;
-
-                    // ♛ وزیر — ترکیب فیل و رخ
-                    case PieceType.Queen:
-                        foreach (var (dr, df) in directions)
-                            if (CanSlideAttack(rank, file, dr, df, targetRank, targetFile))
-                                return true;
-                        break;
-
-                    // ♞ اسب — الگوی حرکت خاص
-                    case PieceType.Knight:
-                        int[,] knightMoves = { { 2, 1 }, { 2, -1 }, { -2, 1 }, { -2, -1 }, { 1, 2 }, { 1, -2 }, { -1, 2 }, { -1, -2 } };
-                        for (int j = 0; j < knightMoves.GetLength(0); j++)
-                        {
-                            int nr = rank + knightMoves[j, 0];
-                            int nf = file + knightMoves[j, 1];
-                            if (nr == targetRank && nf == targetFile)
-                                return true;
-                        }
-                        break;
-
-                    // ♙ پیاده — فقط خانه‌های مورب جلو را تهدید می‌کند
-                    case PieceType.Pawn:
-                        int dir = (attackerColor == PieceColor.White) ? 1 : -1; // سفید به بالا (rank+1)، سیاه به پایین (rank-1)
-                        if (rank + dir == targetRank && Math.Abs(file - targetFile) == 1)
-                            return true;
-                        break;
-
-                    // ♚ شاه — فقط خانه‌های اطرافش را تهدید می‌کند
-                    case PieceType.King:
-                        if (Math.Abs(rank - targetRank) <= 1 && Math.Abs(file - targetFile) <= 1)
-                            return true;
-                        break;
-                }
-            }
-
-            return false; // هیچ مهره‌ای تهدید نمی‌کند
-        }
-
-        private bool CanSlideAttack(int r, int f, int dr, int df, int targetRank, int targetFile)
-        {
-            r += dr;
-            f += df;
-
-            while (r >= 0 && r < 8 && f >= 0 && f < 8)
-            {
-                int idx = BitBoardHelper.ToIndex(r, f);
-
-                // اگر رسیدیم به خانه‌ی هدف → حمله ممکن است
-                if (r == targetRank && f == targetFile)
-                    return true;
-
-                // اگر مهره‌ای سر راه است → نمی‌شود ادامه داد
-                if (board[idx] != null)
-                    return false;
-
-                r += dr;
-                f += df;
-            }
-
-            return false;
-        }
-
-
 
         private void UpdateHistory(int from, int to, Piece piece)
         {
@@ -290,11 +94,11 @@ namespace ChessServer.Logic
 
         private void AfterMoveChecks(int from, int to, Piece piece)
         {
-            SetEnPassantSquareForNextMoveIfExist(from, to, piece);
+            enPassantHelper.SetEnPassantSquareForNextMoveIfExist(from, to, piece);
 
-            CheckPromotion(to, piece);
+            promotionHelper.CheckPromotion(to, piece);
 
-            CheckMoveIsCastleMove(to, piece);
+            castlingHelper.CheckMoveIsCastleMove(to, piece);
 
             UpdateGameState();
         }
@@ -311,65 +115,16 @@ namespace ChessServer.Logic
             }
         }
 
-        private void ResetCastlingFlagsWhenCompleted()
-        {
-            if (isCastlingInProgress)
-            {
-                castleMoveColor = null;
-
-                isCastlingInProgress = false;
-
-                canKingsideCastle = false;
-                canQueensideCastle = false;
-
-                isKingsideCastle = false;
-                isQueensideCastle = false;
-                SelectedDestinationForRookWhenIsCastlingInProgress = 65;
-            }
-        }
-
-        private void ExecuteEnPassant(int to, Piece piece)
-        {
-            int capturedPawnSquare = (piece.Color == PieceColor.White) ? to - 8 : to + 8;
-            board[capturedPawnSquare] = null;
-        }
-
-        private bool MoveIsEnPassant(int to, Piece piece)
-        {
-            return piece.Type == PieceType.Pawn && enPassantSquare.HasValue && to == enPassantSquare.Value;
-        }
-
-        private void SetEnPassantSquareForNextMoveIfExist(int from, int to, Piece piece)
-        {
-            if (piece.Type == PieceType.Pawn && Math.Abs(to - from) == 16)
-                enPassantSquare = (from + to) / 2;
-            else
-                enPassantSquare = null;
-        }
-
-        private void CheckPromotion(int to, Piece piece)
-        {
-            int toRank = to / 8;
-            if (piece.Type == PieceType.Pawn &&
-                ((piece.Color == PieceColor.White && toRank == 7) ||
-                 (piece.Color == PieceColor.Black && toRank == 0)))
-            {
-                //board[to] = new Piece(PieceType.Queen, piece.Color);
-                pendingPromotionSquare = to;
-            }
-        }
-
         private void SaveLastMove(int from, int to, Piece piece)
         {
             lastMove = (from, to, piece);
         }
 
-
         private void ChangeTurn()
         {
             Turn = (Turn == PieceColor.White) ? PieceColor.Black : PieceColor.White;
 
-            
+
         }
 
         private void ExecuteMove(int from, int to, Piece piece)
@@ -379,22 +134,14 @@ namespace ChessServer.Logic
 
             piece.HasMoved = true;
 
-            if (isCastlingInProgress)
+            if (castlingHelper.isCastlingInProgress)
             {
-                CheckCastlingDone(to, piece);
+                castlingHelper.CheckCastlingDone(to, piece);
             }
 
-            if (MoveIsEnPassant(to, piece))
+            if (enPassantHelper.MoveIsEnPassant(to, piece))
             {
-                ExecuteEnPassant(to, piece);
-            }
-        }
-
-        private void CheckCastlingDone(int to, Piece piece)
-        {
-            if (piece.Type == PieceType.Rook && piece.Color == castleMoveColor && to == SelectedDestinationForRookWhenIsCastlingInProgress)
-            {
-                ResetCastlingFlagsWhenCompleted();
+                enPassantHelper.ExecuteEnPassant(board, to, piece);
             }
         }
 
@@ -504,20 +251,16 @@ namespace ChessServer.Logic
             return result;
         }
 
-
-        /// <summary>
-        /// تولید حرکت‌های ممکن برای یک مهره در یک خانه
-        /// </summary>
         public List<int> GetAvailableMoves(int square)
         {
             var piece = GetPieceAt(square);
             if (piece == null) return new();
 
             var moves = new List<int>();
-            if (IsCastlingInProgressAndCorrectRookPieceSelected(square, piece))
+            if (castlingHelper.IsCastlingInProgressAndCorrectRookPieceSelected(square, piece))
             {
-                SelectedDestinationForRookWhenIsCastlingInProgress = GetCastleRookDestinationWhenIsCastlingInProgress(piece.Color, isKingsideCastle, isQueensideCastle);
-                moves.Add(SelectedDestinationForRookWhenIsCastlingInProgress);
+                castlingHelper.SelectedDestinationForRookWhenIsCastlingInProgress = CastlingHelper.GetCastleRookDestinationWhenIsCastlingInProgress(piece.Color, castlingHelper.isKingsideCastle, castlingHelper.isQueensideCastle);
+                moves.Add(castlingHelper.SelectedDestinationForRookWhenIsCastlingInProgress);
             }
             else
             {
@@ -525,7 +268,7 @@ namespace ChessServer.Logic
                 {
                     case PieceType.Pawn:
                         moves.AddRange(GetPawnMoves(square, piece.Color));
-                        CheckEnPassant(square, piece, moves);
+                        enPassantHelper.CheckEnPassant(board, square, piece, moves);
                         break;
 
                     case PieceType.Knight:
@@ -544,7 +287,7 @@ namespace ChessServer.Logic
                         break;
                     case PieceType.King:
                         moves.AddRange(GetSimpleMoves(square, KingLookup.Moves[square], piece.Color));
-                        moves.AddRange(GetCastleMoveIfCan(piece));
+                        moves.AddRange(castlingHelper.GetCastleMoveIfCan(board, piece));
                         break;
                 }
             }
@@ -581,7 +324,6 @@ namespace ChessServer.Logic
             return true;
         }
 
-
         private bool IsStalemate(PieceColor color)
         {
             // اگر شاه در کیش است، پات نیست
@@ -604,81 +346,6 @@ namespace ChessServer.Logic
             return true;
         }
 
-
-
-        private bool IsCastlingInProgressAndCorrectRookPieceSelected(int square, Piece piece)
-        {
-            bool resualt = false;
-            if (isCastlingInProgress && piece.Type == PieceType.Rook)
-            {
-                if (isQueensideCastle && square == (castleMoveColor == PieceColor.White ? 0 : 3))
-                {
-                    resualt = true;
-                }
-                else if (isKingsideCastle && square == (castleMoveColor == PieceColor.White ? 0 : 3))
-                {
-                    resualt = true;
-                }
-                else
-                {
-                    resualt = false;
-                }
-            }
-
-            return resualt;
-        }
-
-        private static int GetCastleRookDestinationWhenIsCastlingInProgress(PieceColor color, bool isKingsideCastle, bool isQueensideCastle)
-        {
-            int result = 65;
-            if (isKingsideCastle)
-            {
-                // قلعه کوچک
-                result = (color == PieceColor.White) ? 5 : 61; // f1 یا f8
-            }
-
-            if (isQueensideCastle)
-            {
-                // قلعه بزرگ
-                result = (color == PieceColor.White) ? 3 : 59; // d1 یا d8
-            }
-
-            return result;
-        }
-
-        private List<int> GetCastleMoveIfCan(Piece king)
-        {
-            var moves = new List<int>();
-            ResetBeforeCaslteMoveControlFlag();
-            if (CanCastleKingside(king.Color))
-            {
-
-                // مقصد شاه در قلعه کوچک
-                int to = (king.Color == PieceColor.White) ? 6 : 62;
-                moves.Add(to);
-                castleMoveColor = king.Color;
-                canKingsideCastle = true;
-            }
-
-            if (CanCastleQueenside(king.Color))
-            {
-                // مقصد شاه در قلعه بزرگ
-                int to = (king.Color == PieceColor.White) ? 2 : 58;
-                moves.Add(to);
-                castleMoveColor = king.Color;
-                canQueensideCastle = true;
-            }
-
-            return moves;
-        }
-
-        private void ResetBeforeCaslteMoveControlFlag()
-        {
-            castleMoveColor = null;
-            canKingsideCastle = false;
-            canQueensideCastle = false;
-        }
-
         private List<int> CeckKish(int square, Piece piece, List<int> moves)
         {
             List<int> legalMoves = new List<int>();
@@ -692,7 +359,7 @@ namespace ChessServer.Logic
                 // نکته: اگر این حرکت، یک en-passant گرفتن باشد، باید پیادهٔ گرفته‌شده را هم موقتا پاک کنیم
                 bool removedEnPassantPawn = false;
                 Piece? removedPawn = null;
-                if (piece.Type == PieceType.Pawn && enPassantSquare.HasValue && move == enPassantSquare.Value)
+                if (piece.Type == PieceType.Pawn && enPassantHelper.enPassantSquare.HasValue && move == enPassantHelper.enPassantSquare.Value)
                 {
                     int capturedPawnSquare = (piece.Color == PieceColor.White) ? move - 8 : move + 8;
                     removedPawn = board[capturedPawnSquare];
@@ -720,29 +387,6 @@ namespace ChessServer.Logic
             }
 
             return legalMoves;
-        }
-
-        private void CheckEnPassant(int square, Piece piece, List<int> moves)
-        {
-            if (enPassantSquare.HasValue)
-            {
-                int row = square / 8;
-                int col = square % 8;
-                int ep = enPassantSquare.Value;
-                int epRow = ep / 8;
-                int epCol = ep % 8;
-
-                // en-passant زمانی می‌تواند باشد که پیاده دشمن دقیقا در هم‌ردیف ما و در ستون مجاور باشد
-                if (row == epRow && Math.Abs(col - epCol) == 1)
-                {
-                    int captureSquare = (piece.Color == PieceColor.White) ? ep - 8 : ep + 8;
-                    // خانه‌ای که مهاجم باید برود، باید خالی باشد (طبق قانون)، و خانهٔ گرفته شده باید پیادهٔ دشمن باشد
-                    if (board[captureSquare] == null && board[ep] != null && board[ep]?.Type == PieceType.Pawn && board[ep]?.Color != piece.Color)
-                    {
-                        moves.Add(ep);
-                    }
-                }
-            }
         }
 
         private bool IsKingInCheck(PieceColor color)
@@ -800,16 +444,5 @@ namespace ChessServer.Logic
 
             return false;
         }
-
-        internal void PromotePawn(int promotionSquare, PieceType newType)
-        {
-            if (board[promotionSquare] != null)
-            {
-                board[promotionSquare] = new Piece(newType, board[promotionSquare].Color);
-            }
-
-        }
     }
-
-
 }

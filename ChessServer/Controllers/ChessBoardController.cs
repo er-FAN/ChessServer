@@ -57,7 +57,7 @@ namespace ChessServer.Controllers
             _game.MovePiece(from, to);
             string message = $"حرکت {piece.Color} {piece.Type} از {request.FromSquare} به {request.ToSquare} انجام شد.";
             string promotionMessage = "enter 1 for queen,2 for rook,3 for bishop,4 for knight";
-            if (_game.pendingPromotionSquare != null)
+            if (_game.promotionHelper.pendingPromotionSquare != null)
             {
                 message += "\n" + promotionMessage;
             }
@@ -72,7 +72,7 @@ namespace ChessServer.Controllers
         [HttpPost("promotion")]
         public IActionResult PromotePawn(PromotionRequest request)
         {
-            if (_game.pendingPromotionSquare == null)
+            if (_game.promotionHelper.pendingPromotionSquare == null)
                 return BadRequest("No pawn is awaiting promotion.");
 
             // تبدیل عدد کاربر به enum PieceType
@@ -86,7 +86,7 @@ namespace ChessServer.Controllers
             };
 
             // انجام پروموشن
-            _game.PromotePawn(_game.pendingPromotionSquare.Value, newType);
+            _game.promotionHelper.PromotePawn(_game.board, _game.promotionHelper.pendingPromotionSquare.Value, newType);
 
             return Ok(new
             {
