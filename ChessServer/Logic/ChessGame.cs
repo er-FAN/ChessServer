@@ -1,5 +1,6 @@
 ﻿using ChessServer.Helpers;
 using System.Collections;
+using System.Text.RegularExpressions;
 
 namespace ChessServer.Logic
 {
@@ -14,13 +15,23 @@ namespace ChessServer.Logic
 
         private (int from, int to, Piece moved)? lastMove;
         private List<(int from, int to, Piece moved)?> Moves;
+        private List<(int from, int to, Piece moved)?> UndoMoves = [];
 
         // وضعیت صفحه (هر خانه یا خالی است یا یک مهره دارد)
         public readonly Piece?[] board = new Piece?[64];
 
+        private List<string> FenHistory = new();
+
+        bool IsThreefoldRepetition = false;
+
+        private int halfMoveClock = 0;  // شمارنده نیم‌حرکت‌ها
+        public bool IsFiftyMoveRuleTriggered { get; private set; } = false;
+
         public GameState GameState { get; private set; }
 
         public PieceColor Turn { get; private set; } = PieceColor.White;
+
+        public Piece? GetPieceAt(int square) => board[square];
 
         public ChessGame()
         {
@@ -32,6 +43,51 @@ namespace ChessServer.Logic
             Moves = [];
             boardHelper.SetupInitialPosition(board);
         }
+
+        public void Undo()
+        {
+            Piece piece = Moves.Last().Value.moved;
+            int from = Moves.Last().Value.from;
+            int to = Moves.Last().Value.to;
+            board[from] = piece;
+            board[to] = null;
+            UndoMoves.Add(Moves.Last());
+            Moves.RemoveAt(Moves.Count - 1);
+        }
+
+        public void Redo()
+        {
+            if (UndoMoves.Count > 0)
+            {
+                Piece piece = UndoMoves.Last().Value.moved;
+                int from = UndoMoves.Last().Value.from;
+                int to = UndoMoves.Last().Value.to;
+                board[from] = null;
+                board[to] = piece;
+                Moves.Add(UndoMoves.Last());
+                UndoMoves.RemoveAt(UndoMoves.Count - 1);
+            }
+        }
+
+        public bool CheckThreefoldRepetition()
+        {
+            if (FenHistory.Count < 8) return false; // حداقل 3 موقعیت لازم
+
+            string lastFen = FenHistory[FenHistory.Count - 1];
+
+            // فقط بخش اول تا چهارم FEN مهم است (قبل از نیم حرکت و شماره حرکت)
+            string normalize(string fen)
+                => string.Join(" ", fen.Split(' ').Take(4));
+
+            string target = normalize(lastFen);
+
+            int count = FenHistory
+                .Select(f => normalize(f))
+                .Count(f => f == target);
+
+            return count >= 3;
+        }
+
 
         public void MovePiece(Piece?[] board, int from, int to)
         {
@@ -52,6 +108,117 @@ namespace ChessServer.Logic
 
             }
         }
+
+        public void UpdateFiftyMoveRule(Piece? movedPiece, Piece? capturedPiece)
+        {
+            // اگر پیاده حرکت کرده یا مهره‌ای گرفته شده، شمارنده صفر می‌شود
+            if (movedPiece?.Type == PieceType.Pawn || capturedPiece != null)
+            {
+                halfMoveClock = 0;
+                IsFiftyMoveRuleTriggered = false; // هنوز قانون فعال نشده
+            }
+            else
+            {
+                halfMoveClock++;
+                if (halfMoveClock >= 100) // 50 حرکت کامل = 100 نیم‌حرکت
+                {
+                    IsFiftyMoveRuleTriggered = true;
+                }
+            }
+        }
+
+        public string GenerateFEN()
+        {
+            // 1) ساخت بخش چیدمان صفحه
+            string boardPart = "";
+            for (int rank = 7; rank >= 0; rank--)
+            {
+                int emptyCount = 0;
+
+                for (int file = 0; file < 8; file++)
+                {
+                    int index = rank * 8 + file;
+                    var piece = board[index];
+
+                    if (piece == null)
+                    {
+                        emptyCount++;
+                    }
+                    else
+                    {
+                        if (emptyCount > 0)
+                        {
+                            boardPart += emptyCount.ToString();
+                            emptyCount = 0;
+                        }
+
+                        boardPart += PieceToFen(piece);
+                    }
+                }
+
+                if (emptyCount > 0)
+                    boardPart += emptyCount.ToString();
+
+                if (rank > 0)
+                    boardPart += "/";
+            }
+
+            // 2) نوبت
+            string turnPart = (Turn == PieceColor.White) ? "w" : "b";
+
+            // 3) وضعیت امکان قلعه رفتن
+            string castlingPart = "";
+            if (Turn == PieceColor.White && castlingHelper.canKingsideCastle) castlingPart += "K";
+            if (Turn == PieceColor.White && castlingHelper.canQueensideCastle) castlingPart += "Q";
+            if (Turn == PieceColor.Black && castlingHelper.canKingsideCastle) castlingPart += "k";
+            if (Turn == PieceColor.Black && castlingHelper.canQueensideCastle) castlingPart += "q";
+            if (castlingPart == "") castlingPart = "-";
+
+            // 4) خانه en passant
+            string enPassantPart = "-";
+            if (enPassantHelper.enPassantSquare.HasValue)
+                enPassantPart = IndexToSquare(enPassantHelper.enPassantSquare.Value);
+
+            // 5) نیم‌حرکت برای قانون 50 حرکت
+            // فعلاً ندارید → صفر
+            string halfMoveClock = "0";
+
+            // 6) شماره حرکت کامل
+            // اگر نوبت سفید باشد: moveNumber = history.Count / 2 + 1
+            int fullMoveNumber = (Moves.Count / 2) + 1;
+
+            return $"{boardPart} {turnPart} {castlingPart} {enPassantPart} {halfMoveClock} {fullMoveNumber}";
+        }
+
+        private string PieceToFen(Piece piece)
+        {
+            char c = piece.Type switch
+            {
+                PieceType.Pawn => 'p',
+                PieceType.Knight => 'n',
+                PieceType.Bishop => 'b',
+                PieceType.Rook => 'r',
+                PieceType.Queen => 'q',
+                PieceType.King => 'k',
+                _ => '?'
+            };
+
+            // سفید باید uppercase باشد
+            return (piece.Color == PieceColor.White) ? char.ToUpper(c).ToString() : c.ToString();
+        }
+
+        private string IndexToSquare(int index)
+        {
+            int rank = index / 8;
+            int file = index % 8;
+
+            char fileChar = (char)('a' + file);
+            char rankChar = (char)('1' + rank);
+
+            return $"{fileChar}{rankChar}";
+        }
+
+
 
         public List<int> GetAvailableMoves(int square)
         {
@@ -146,6 +313,11 @@ namespace ChessServer.Logic
 
         private void UpdateGameState()
         {
+            if (CheckThreefoldRepetition())
+            {
+                IsThreefoldRepetition = true;
+            }
+
             if (IsCheckmate(Turn))
             {
                 GameState = GameState.Checkmate;
@@ -170,10 +342,18 @@ namespace ChessServer.Logic
 
         private void ExecuteMove(int from, int to, Piece piece)
         {
+            var captured = board[to];
+
             board[to] = piece;
             board[from] = null;
+            
 
             piece.HasMoved = true;
+            UndoMoves = [];
+
+            UpdateFiftyMoveRule(piece, captured);
+            FenHistory.Add(GenerateFEN());
+
 
             if (castlingHelper.isCastlingInProgress)
             {

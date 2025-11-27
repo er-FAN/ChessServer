@@ -1,4 +1,5 @@
-﻿using ChessServer.Logic;
+﻿using ChessServer.DTOs;
+using ChessServer.Logic;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
@@ -54,7 +55,7 @@ namespace ChessServer.Controllers
             if (!legalMoves.Contains(to))
                 return BadRequest("حرکت غیرمجاز است.");
 
-            _game.MovePiece(from, to);
+            _game.MovePiece(_game.board, from, to);
             string message = $"حرکت {piece.Color} {piece.Type} از {request.FromSquare} به {request.ToSquare} انجام شد.";
             string promotionMessage = "enter 1 for queen,2 for rook,3 for bishop,4 for knight";
             if (_game.promotionHelper.pendingPromotionSquare != null)
@@ -62,11 +63,13 @@ namespace ChessServer.Controllers
                 message += "\n" + promotionMessage;
             }
 
-            return Ok(new
-            {
-                Message = message,
-                NextTurn = _game.Turn.ToString()
-            });
+            return Ok(new GameStatus());
+
+            //return Ok(new
+            //{
+            //    Message = message,
+            //    NextTurn = _game.Turn.ToString()
+            //});
         }
 
         [HttpPost("promotion")]
@@ -92,6 +95,26 @@ namespace ChessServer.Controllers
             {
                 success = true,
                 promotedTo = newType.ToString()
+            });
+        }
+
+        [HttpPost("Undo")]
+        public IActionResult Undo()
+        {
+            _game.Undo();
+            return Ok(new
+            {
+                success = true
+            });
+        }
+
+        [HttpPost("Redo")]
+        public IActionResult Redo()
+        {
+            _game.Redo();
+            return Ok(new
+            {
+                success = true
             });
         }
 
