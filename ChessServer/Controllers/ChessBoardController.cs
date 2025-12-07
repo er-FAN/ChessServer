@@ -118,6 +118,15 @@ namespace ChessServer.Controllers
             });
         }
 
+        [HttpGet("test")]
+        public IActionResult Test()
+        {
+            return Ok(new
+            {
+                success = true
+            });
+        }
+
         // ------------------------
         // توابع کمکی
         // ------------------------

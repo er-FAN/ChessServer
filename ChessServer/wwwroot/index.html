@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="fa">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تخته شطرنج - نمایش حرکات مجاز</title>
+    <style>
+        /* استایل‌های CSS */
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+            font-family: Arial, sans-serif;
+            flex-direction: column;
+        }
+
+        #chessboard {
+            display: grid;
+            grid-template-columns: repeat(8, 60px);
+            grid-template-rows: repeat(8, 60px);
+            border: 5px solid #333;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            position: relative;
+        }
+
+        .square {
+            width: 60px;
+            height: 60px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 30px; /* اندازه مهره */
+            cursor: pointer;
+            transition: background-color 0.15s ease;
+            user-select: none;
+            position: relative;
+        }
+
+        /* رنگ خانه‌های تخته */
+        .light {
+            background-color: #f0d9b5; /* کرمی روشن */
+        }
+
+        .dark {
+            background-color: #b58863; /* قهوه‌ای تیره */
+        }
+
+        /* نشانگر حرکات مجاز */
+        .move-indicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px;
+            height: 20px;
+            background-color: rgba(0, 200, 0, 0.6); /* سبز شفاف */
+            border-radius: 50%;
+            pointer-events: none; /* تا روی کلیک خانه تاثیری نگذارد */
+            z-index: 10;
+        }
+
+        /* نشانگر خانه انتخاب شده */
+        .selected {
+            box-shadow: inset 0 0 0 4px gold; /* حاشیه طلایی برای خانه انتخاب شده */
+        }
+
+        /* سبک متن مهره‌ها */
+        .piece {
+            z-index: 5;
+        }
+
+        .white-piece {
+            color: white; /* مهره‌های سفید */
+            text-shadow: 1px 1px 2px black;
+        }
+
+        .black-piece {
+            color: black; /* مهره‌های سیاه */
+            text-shadow: 1px 1px 2px white;
+        }
+
+        #status {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #333;
+            color: white;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>نمایش حرکات مجاز شطرنج</h1>
+
+    <div id="chessboard">
+    </div>
+
+    <div id="status">
+        برای مشاهده حرکات مجاز، روی یک مهره کلیک کنید.
+    </div>
+
+    <script>
+        // دیکشنری یونیکد مهره‌های شطرنج
+        const PIECES = {
+            'K': '♔', 'Q': '♕', 'R': '♖', 'B': '♗', 'N': '♘', 'P': '♙', // سفید
+            'k': '♚', 'q': '♛', 'r': '♜', 'b': '♝', 'n': '♞', 'p': '♟'  // سیاه
+        };
+
+        // موقعیت اولیه تخته شطرنج (FEN استاندارد)
+        // 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR'
+        const initialBoard = [
+            ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'],
+            ['p', 'p', 'p', 'p', 'p', 'p', 'p', 'p'],
+            [null, null, null, null, null, null, null, null],
+            [null, null, null, null, null, null, null, null],
+            [null, null, null, null, null, null, null, null],
+            [null, null, null, null, null, null, null, null],
+            ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P'],
+            ['R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R']
+        ];
+
+        // تابع تبدیل مختصات (0-7) به نام مربع شطرنج (a1 تا h8)
+        function toSquareName(row, col) {
+            const file = String.fromCharCode('a'.charCodeAt(0) + col);
+            const rank = 8 - row;
+            return file + rank;
+        }
+
+        // تابع ایجاد و رندر تخته
+        function createBoard() {
+            const chessboard = document.getElementById('chessboard');
+            for (let row = 0; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    const squareName = toSquareName(row, col);
+                    const square = document.createElement('div');
+                    square.className = `square ${(row + col) % 2 === 0 ? 'light' : 'dark'}`;
+                    square.dataset.square = squareName;
+
+                    const pieceChar = initialBoard[row][col];
+                    if (pieceChar) {
+                        const piece = document.createElement('span');
+                        piece.className = `piece ${pieceChar.toUpperCase() === pieceChar ? 'white-piece' : 'black-piece'}`;
+                        piece.innerHTML = PIECES[pieceChar];
+                        square.appendChild(piece);
+                    }
+
+                    square.addEventListener('click', handleSquareClick);
+                    chessboard.appendChild(square);
+                }
+            }
+        }
+
+        // تابع پاک کردن نشانگرهای حرکات قبلی و انتخاب
+        function clearIndicators() {
+            document.querySelectorAll('.move-indicator').forEach(el => el.remove());
+            document.querySelectorAll('.selected').forEach(el => el.classList.remove('selected'));
+        }
+
+        // تابع اصلی مدیریت کلیک روی خانه
+        function handleSquareClick(event) {
+            const clickedSquare = event.currentTarget;
+            const squareName = clickedSquare.dataset.square;
+            const pieceElement = clickedSquare.querySelector('.piece');
+
+            // اگر مهره‌ای روی خانه کلیک شده نباشد، کاری نمی‌کنیم
+            if (!pieceElement) {
+                document.getElementById('status').textContent = `خانه ${squareName} خالی است.`;
+                clearIndicators();
+                return;
+            }
+
+            // پاک کردن نشانگرهای قبلی و انتخاب خانه جدید
+            clearIndicators();
+            clickedSquare.classList.add('selected');
+
+            document.getElementById('status').textContent = `در حال درخواست حرکات مجاز برای مهره روی ${squareName}...`;
+
+            // ساخت بدنه JSON برای ارسال به سرور
+            var data = JSON.stringify({
+                "Square": squareName
+            });
+
+            // اجرای ریکوئست
+            var xhr = new XMLHttpRequest();
+            xhr.withCredentials = true;
+
+            xhr.addEventListener("readystatechange", function () {
+                if (this.readyState === 4) {
+                    try {
+                        const response = JSON.parse(this.responseText);
+                        displayLegalMoves(response);
+                    } catch (e) {
+                        document.getElementById('status').textContent = `خطا در دریافت یا پردازش پاسخ سرور: ${e.message}`;
+                        console.error("خطا در پاسخ سرور:", this.responseText, e);
+                    }
+                }
+            });
+
+            xhr.onerror = function () {
+                document.getElementById('status').textContent = `خطا در برقراری ارتباط با سرور. مطمئن شوید سرور (http://localhost:8081) فعال است.`;
+            };
+
+            xhr.open("POST", "http://localhost:8081/api/Chess/pickup");
+            xhr.setRequestHeader("Content-Type", "application/json");
+
+            // ارسال درخواست
+            xhr.send(data);
+        }
+
+        // تابع نمایش حرکات مجاز روی تخته
+        function displayLegalMoves(response) {
+            const statusDiv = document.getElementById('status');
+            clearIndicators(); // دوباره پاک کردن، در صورت تاخیر در پاسخ
+
+            if (response && response.moves) {
+                statusDiv.textContent = `مهره: ${response.piece} در ${response.from}. حرکات مجاز: ${response.moves.join(', ')}`;
+
+                // نمایش نشانگر روی خانه‌های مجاز
+                response.moves.forEach(moveSquare => {
+                    const targetSquareEl = document.querySelector(`[data-square="${moveSquare}"]`);
+                    if (targetSquareEl) {
+                        const indicator = document.createElement('div');
+                        indicator.className = 'move-indicator';
+                        targetSquareEl.appendChild(indicator);
+                    }
+                });
+            } else {
+                statusDiv.textContent = `پاسخ سرور نامعتبر است یا حرکتی مجاز نیست.`;
+            }
+        }
+
+        // اجرای تابع ایجاد تخته پس از بارگذاری کامل صفحه
+        document.addEventListener('DOMContentLoaded', createBoard);
+    </script>
+
+</body>
+</html>
