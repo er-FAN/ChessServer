@@ -63,13 +63,13 @@ namespace ChessServer.Controllers
                 message += "\n" + promotionMessage;
             }
 
-            return Ok(new GameStatus());
+            //return Ok(new GameStatus());
 
-            //return Ok(new
-            //{
-            //    Message = message,
-            //    NextTurn = _game.Turn.ToString()
-            //});
+            return Ok(new
+            {
+                Message = message,
+                NextTurn = _game.Turn.ToString()
+            });
         }
 
         [HttpPost("promotion")]

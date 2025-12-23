@@ -32,12 +32,13 @@ namespace ChessServer
             // Configure the HTTP request pipeline.
             if (app.Environment.IsDevelopment())
             {
-                app.UseSwagger();
-                app.UseSwaggerUI();
+                //app.UseSwagger();
+                //app.UseSwaggerUI();
+                app.UseDefaultFiles();
+                app.UseStaticFiles();
             }
 
-            app.UseDefaultFiles();
-            app.UseStaticFiles();
+
 
             app.UseAuthorization();
 
